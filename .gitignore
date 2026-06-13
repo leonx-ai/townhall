@@ -1,0 +1,5 @@
+/output/
+/.env
+/.bundle/
+.DS_Store
+.claude/

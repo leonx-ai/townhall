@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+# 用【通用编排核】跑非 HTML 任务。会调 DeepSeek。
+#
+# 跑法:  bin/run-task            # 列出可跑的任务
+#         bin/run-task email      # 跑"邮箱正则"这个任务
+#         bin/run-task phone
+#         bin/run-task date
+#
+# 看点:同一套 TaskRunner(fan-out + 自检自改 + 挑最优),产物从网页换成一行正则。
+# 编排核一行没改,变的只有 Domain。而且验证器是【硬】的(跑测试用例),
+# 所以挑最优直接看"错误最少",不需要 Critic/Judge。
+require_relative "../config"
+require_relative "../lib/domain"
+require_relative "../lib/task_runner"
+
+# 每个任务 = 一句需求 + 一组"该匹配 / 不该匹配"的测试用例(这就是硬验证器的弹药)。
+TASKS = {
+  "email" => {
+    brief: "匹配一个基本的邮箱地址",
+    yes:   ["a@b.com", "foo.bar@x.co", "x_y@mail.org"],
+    no:    ["abc", "a@b", "@b.com", "a b@c.com"]
+  },
+  "phone" => {
+    brief: "匹配中国大陆手机号(1 开头的 11 位数字)",
+    yes:   ["13812345678", "15900001111"],
+    no:    ["1381234567", "23812345678", "138-1234-5678", "abc"]
+  },
+  "date" => {
+    brief: "匹配 YYYY-MM-DD 格式的日期",
+    yes:   ["2026-06-13", "1999-12-31"],
+    no:    ["2026/06/13", "26-6-1", "2026-13-40", "hello"]
+  }
+}
+
+name = ARGV[0]
+unless TASKS.key?(name)
+  puts "可跑的任务:#{TASKS.keys.join(' / ')}"
+  puts %(例:  bin/run-task email)
+  exit 1
+end
+
+t = TASKS[name]
+domain = Domains.regex(should_match: t[:yes], should_not_match: t[:no])
+best = TaskRunner.new(domain).run(t[:brief])
+
+puts
+puts "需求:#{t[:brief]}"
+puts "产出正则:#{best[:artifact]}"
+puts(best[:errors].empty? ? "✅ 通过全部测试用例" : "⚠️ 仍有问题:\n  - #{best[:errors].join("\n  - ")}")

@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+# 看递归分解 +「停下来」问题。会调 DeepSeek(每问一次"拆不拆"烧 1 次)。
+#
+# 跑法:  bin/try-recursion ["任务"] [深度上限] [调用预算]
+#         bin/try-recursion                       # 用默认任务、深度2、预算12
+#         bin/try-recursion "组织一场班级运动会" 3 20
+#
+# 看点:模型几乎总想往下拆(满屏 ▸),真正让它停的是 max_depth 和 budget 两道闸。
+require_relative "../config"
+require_relative "../lib/recursive"
+
+task      = (ARGV[0] && !ARGV[0].empty?) ? ARGV[0] : "做一个在线测验平台:能出题、学生答题、自动判分、显示排行榜"
+max_depth = (ARGV[1] || "2").to_i
+cap       = (ARGV[2] || "12").to_i
+
+puts "根任务:#{task}"
+puts "深度上限 max_depth=#{max_depth} · 调用预算 budget=#{cap} 次\n\n"
+
+budget = Recursive::Budget.new(cap)
+root = Recursive.tree(task, budget, max_depth: max_depth, log: ->(m) { puts m })
+
+# 统计叶子:有多少是模型自己收的手,有多少是被闸逼停的。
+leaves = []
+collect = ->(n) { n[:children].empty? ? leaves << n : n[:children].each { |c| collect.call(c) } }
+collect.call(root)
+tally = leaves.group_by { |l| l[:reason] }.transform_values(&:size)
+
+puts "\n— 收敛了 —"
+puts "总共问了模型 #{budget.spent} 次(每次「拆不拆」烧 1 次,预算 #{cap})"
+puts "叶子 #{leaves.size} 个,其中:"
+puts "  模型自己说够小(atomic):#{tally[:atomic] || 0}"
+puts "  被【深度上限】逼停    :#{tally[:depth] || 0}"
+puts "  被【预算】逼停        :#{tally[:budget] || 0}"
+puts
+puts "看后两个数 —— 那就是「停下来」不是模型自愿,是外面的闸按下去的。"
+puts "把 max_depth 调大一格再跑,看调用次数怎么涨 —— 那是递归的成本。"

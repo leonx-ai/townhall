@@ -1,0 +1,33 @@
+#!/usr/bin/env ruby
+# 直观对比 min(一次性 Agent)和 max(一场多轮 Conversation)。
+# 会调 DeepSeek,烧一点 token。
+#
+# 跑法:  ruby bin/try-memory
+#
+# 看点:对【同一个"复述前面两个决定"的问题】—— 一场对话里答得出,
+# 一次性的 Agent 抓瞎。但记住:这只是"上下文长短",还【不是】真记忆。
+require_relative "../config"
+require_relative "../lib/agent"
+require_relative "../lib/conversation"
+
+SYSTEM = "你是一个简洁的前端架构师。每次只回一两句话,不要写代码。"
+
+puts "===== max 上下文:一场多轮 Conversation(一个 chat,这场会全程记得)=====\n\n"
+crew = Conversation.new(model: WORKER_MODEL, system: SYSTEM)
+
+puts "[第1轮] 定第一个设计决定"
+puts crew.say("我们要做一个井字棋网页。先别写代码,用一句话定一个关键设计决定。")
+
+puts "\n[第2轮] 再定一个,且不许和上一个重复(它得记得上一个)"
+puts crew.say("好。再定第二个关键决定,不要和刚才那个重复。")
+
+puts "\n[第3轮] 让它复述前两轮 —— 这场会里记得住才答得出"
+puts crew.say("把我们前面定的两个决定,各用一句话复述一遍。")
+puts "\n(这场会已累计 #{crew.turns} 轮我的输入,全在它的上下文里)"
+
+puts "\n\n===== min 上下文:一次性的 Agent(每次新开一场会,打完即散)=====\n\n"
+polecat = Agent.new(model: WORKER_MODEL, system: SYSTEM)
+puts "[同样问它复述] 但它从没参与过前面那场对话:"
+puts polecat.call("把我们前面定的两个决定,各用一句话复述一遍。")
+
+puts "\n\n—— 区别只是上下文长短(都活不过一场会)。真·记忆要持久 + 检索,是下一步。"

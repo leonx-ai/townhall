@@ -1,0 +1,34 @@
+#!/usr/bin/env ruby
+# 看 tool use 的循环转起来。会调 DeepSeek。
+#
+# 跑法:  ruby bin/try-tools
+#
+# 同一个大数乘法,对比两次:
+#   A) 不给工具 —— 模型只能凭脑子算,大概率算错(LLM 的老毛病)
+#   B) 给一个 calc 工具 —— 模型自己判断"我算不准",请求调用,代码执行,喂回,给终答
+# 重点看 B 里的 ①②③:那一圈就是 agent 的原子。
+require_relative "../config"
+require_relative "../lib/tools"
+
+QUESTION = "3847 乘以 2913 等于多少?最后只给一个数字。"
+TRUTH = (3847 * 2913).to_s
+
+puts "真实答案:#{TRUTH}\n\n"
+
+puts "===== A) 不给工具:模型凭脑子算 ====="
+plain = RubyLLM.chat(model: WORKER_MODEL, provider: :deepseek, assume_model_exists: true)
+a1 = plain.ask(QUESTION).content.to_s
+puts "模型答:#{a1.strip}"
+puts(a1.include?(TRUTH) ? "  → 居然蒙对了" : "  → ❌ 算错了(大数乘法,模型基本靠猜)")
+
+puts "\n===== B) 给一个 calc 工具:看循环 ====="
+chat = RubyLLM.chat(model: WORKER_MODEL, provider: :deepseek, assume_model_exists: true)
+chat.with_tool(Calculator)
+chat.before_tool_call  { |tc|  puts "  ① 模型请求调工具:#{tc.name}(#{tc.arguments})   ← 这不是答案,是个请求" }
+chat.after_tool_result { |res| puts "  ② 你的代码执行,得到:#{res}   ← 喂回给模型" }
+a2 = chat.ask(QUESTION).content.to_s
+puts "  ③ 模型拿到结果,给终答:#{a2.strip}"
+puts(a2.include?(TRUTH) ? "  → ✅ 对了 —— 它自己判断「我算不准」,借了工具" : "  → ❌ 还是错")
+
+puts "\n—— B 的 ①②③ 这一圈「模型请求 → 代码执行 → 喂回 → 终答」,就是 agent 的原子。"
+puts "   你之前的 Agent 只有 A 那一锤子;有了这个循环,模型才从「会说」变成「能做」。"

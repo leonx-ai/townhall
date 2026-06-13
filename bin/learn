@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+# 让"经验"过【写入闸】才进记忆。会调 DeepSeek(评审小组投票)。
+#
+# 跑法:  bin/learn "场景关键词" "一句话经验"
+#   好经验(该过):  bin/learn "井字棋,棋类" "棋盘下满且无人连线时要提示平局并停止落子"
+#   坏经验(该拦):  bin/learn "井字棋" "把开始按钮设成蓝色"        # 过拟合、不通用
+#                    bin/learn "井字棋" "井字棋棋盘是 4x4 共 16 格"  # 错的
+#
+# 对照 bin/remember(人手直接写、信任写者)看:这个是【agent 提议 → 评审小组把关 → 过了才写】。
+# 演示的就是真相源的铁律:写入必须过闸,挡住"带公章的 heresy"。
+require_relative "../config"
+require_relative "../lib/memory"
+require_relative "../lib/gatekeeper"
+
+scope  = (ARGV[0] || "").split(/[,，\s]+/).reject(&:empty?)
+lesson = ARGV[1].to_s.strip
+if scope.empty? || lesson.empty?
+  puts %(用法: bin/learn "井字棋,棋类" "下满无人连线要提示平局")
+  exit 1
+end
+
+puts "提议经验(scope=#{scope.join(' / ')}):"
+puts "  #{lesson}"
+puts "\n过写入闸(#{Gatekeeper::PANEL} 个独立评审投票)……"
+
+verdict = Gatekeeper.vet(scope, lesson, log: ->(m) { puts m })
+puts
+
+if verdict[:trusted]
+  Memory.remember(scope: scope, lesson: lesson)   # 过闸 → 才真正写入真相源
+  puts "✅ #{verdict[:pass]}/#{verdict[:total]} 通过 → 写入可信记忆。以后相关任务会自动带上它。"
+  puts "   现在共 #{Memory.load.size} 条记忆。"
+else
+  puts "❌ 只 #{verdict[:pass]}/#{verdict[:total]} 通过 → 拦下,【不写入】。"
+  puts "   错的 / 过拟合的经验被挡在门外,不会被注入、不会污染以后的生成。"
+end

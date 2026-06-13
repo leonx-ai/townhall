@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+# 单独看"任务分解"跑起来:Planner 拆步骤 → 流水线一段段建。
+# 会调 DeepSeek(拆 1 次 + 每步 1 次)。
+#
+# 跑法:  bin/try-decompose "做一个井字棋,两人轮流下,分出胜负有提示"
+#
+# 和 bin/townhall(水平 fan-out:N 份完整的挑一份)对照着看,
+# 这里是垂直分解:一份东西分阶段建起来。
+require_relative "../config"
+require_relative "../lib/assembly"
+require "fileutils"
+
+brief = ARGV.join(" ").strip
+brief = "做一个井字棋,两人轮流下,分出胜负有提示" if brief.empty?
+puts "需求:#{brief}\n\n"
+
+puts "===== 1) 分解:Planner 把需求拆成有序步骤 ====="
+steps = Assembly.plan(brief)
+steps.each_with_index { |s, i| puts "  #{i + 1}. #{s}" }
+
+puts "\n===== 2) 流水线:一段段累加到同一份产物(每步都看得见上一步)====="
+html = Assembly.build(brief, steps, log: ->(m) { puts "  → #{m}" })
+
+slug = brief.gsub(/[^\p{Word}]+/, "-").gsub(/\A-+|-+\z/, "")[0, 24]
+dir  = File.expand_path("../output/decompose-#{slug}", __dir__)
+FileUtils.mkdir_p(dir)
+path = File.join(dir, "index.html")
+File.write(path, html)
+
+puts "\n完成 → file://#{path}"
+puts %(打开看看:  open "#{path}")

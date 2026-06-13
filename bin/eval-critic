@@ -1,0 +1,114 @@
+#!/usr/bin/env ruby
+# 评测 Critic 的"脾气"。会调 DeepSeek,烧 token(默认 2 样本 × 6 次 = 12 次调用)。
+#
+# 跑法:  ruby bin/eval-critic [每个样本跑几次]
+#         ruby bin/eval-critic 10
+#
+# 为什么要这个:
+#   Critic 是非确定的 —— 同样输入,这次说 OK、下次挑一堆问题。所以"跑一次真
+#   任务看日志"根本判断不了它准不准:那里还混着【生成】的随机性,两个噪声叠在
+#   一起,分不开。这个脚本把输入【钉死】,只让 Critic 反复跑,把它从生成的随机
+#   里隔离出来 —— 这就是 eval 的核心:固定输入、量化分布,用数字代替"我觉得"。
+#
+#   两个钉死的样本,测两件相反的事:
+#     - 完整版(该说 OK):它有多爱无中生有 → 误报率(false positive)
+#     - 缺平局版(该挑出"没判平局"):它抓不抓得住真缺口 → 召回(recall)
+#   改了 review 的 prompt 想看有没有变好?改完再跑一遍,对着这两个数看。
+require_relative "../config"
+require_relative "../lib/critic"
+
+BRIEF = "做一个井字棋,两人轮流下,分出胜负有提示"
+
+# 棋盘渲染 + 轮流 + 8 条线判胜负,二者共用;区别只在 check() 里那一行平局判定。
+BOARD_JS = <<~JS
+  let cur='X', cells=Array(9).fill(''), over=false;
+  const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  const board=document.getElementById('board'), status=document.getElementById('status');
+  function render(){ board.innerHTML=''; cells.forEach((v,i)=>{ const b=document.createElement('button'); b.textContent=v||' '; b.style.cssText='width:60px;height:60px;font-size:28px'; b.onclick=()=>play(i); board.appendChild(b); }); }
+  function play(i){ if(over||cells[i])return; cells[i]=cur; check(); if(!over){ cur=cur==='X'?'O':'X'; status.textContent='轮到 '+cur; } render(); }
+  function reset(){ cur='X'; cells=Array(9).fill(''); over=false; status.textContent='轮到 X'; render(); }
+JS
+
+# 两个样本【只差 check() 里那一行平局判定】—— 重置按钮等其余部分都一样,
+# 这样召回测的就纯是"平局缺口"本身,不被"少个重置按钮"之类的杂音污染。
+def page(check_js)
+  <<~HTML
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>井字棋</title></head><body>
+    <h1>井字棋</h1>
+    <div id="status">轮到 X</div>
+    <div id="board" style="display:grid;grid-template-columns:repeat(3,60px)"></div>
+    <button onclick="reset()">重新开始</button>
+    <script>
+      #{BOARD_JS}
+      #{check_js}
+      render();
+    </script>
+    </body></html>
+  HTML
+end
+
+# 完整版:连成线判胜负 + 下满判平局。
+GOOD = page(<<~JS)
+  function check(){
+    for(const [a,b,c] of wins){ if(cells[a]&&cells[a]===cells[b]&&cells[b]===cells[c]){ status.textContent=cells[a]+' 赢了!'; over=true; return; } }
+    if(cells.every(v=>v)){ status.textContent='平局!'; over=true; }
+  }
+JS
+
+# 缺平局版:能玩、能判胜负,但下满了不提示平局(真但不致命的缺口)。
+GAP = page(<<~JS)
+  function check(){
+    for(const [a,b,c] of wins){ if(cells[a]&&cells[a]===cells[b]&&cells[b]===cells[c]){ status.textContent=cells[a]+' 赢了!'; over=true; return; } }
+  }
+JS
+
+n = (ARGV[0] || "6").to_i
+n = 6 if n <= 0
+
+# target 给定时,只有"报出来的问题里真的提到那个缺口"才算命中 ——
+# 这是这次 eval 学到的教训:不能只数"报没报问题",要看"报没报对"。
+TARGET = /平局|和棋|下满|填满|都满|九.*格.*满|9.*格.*满|draw|tie/i
+
+def trial(label, expectation, brief, html, n, target: nil)
+  puts "【#{label}】期望:#{expectation}"
+  flagged = 0
+  hits = 0
+  freq = Hash.new(0)
+  n.times do
+    problems = Critic.review(brief, html)
+    hit = target && problems.any? { |p| p =~ target }
+    if problems.empty?
+      print "·"            # 说 OK
+    elsif hit
+      print "O"           # 报了问题,而且【抓到目标缺口】
+    else
+      print "x"           # 报了问题,但【没报到点子上】(很可能是幻觉)
+    end
+    flagged += 1 unless problems.empty?
+    hits += 1 if hit
+    problems.each { |p| freq[p.strip] += 1 }
+    $stdout.flush
+  end
+  puts
+  puts "  报问题 #{flagged}/#{n} 次,说 OK #{n - flagged}/#{n} 次"
+  puts "  其中【真正抓到目标缺口】#{hits}/#{n} 次" if target
+  unless freq.empty?
+    puts "  挑出来的问题(按出现次数):"
+    freq.sort_by { |_, c| -c }.each { |p, c| puts "    #{c}× #{p}" }
+  end
+  puts
+  target ? hits : flagged
+end
+
+puts "=== 评测 Critic 的脾气(每个样本各跑 #{n} 次)===\n\n"
+# 完整版代码是对的 → 任何报错都是误报(false positive)。
+good_fp  = trial("完整版(有胜负 + 平局)", "大多说 OK,挑得越少越好", BRIEF, GOOD, n)
+# 缺平局版 → 只数"真的指出了没判平局"的那几次(O),不是所有报错。
+gap_hit  = trial("缺平局版(能玩,但下满不提示平局)", "常抓到「没判平局」", BRIEF, GAP, n, target: TARGET)
+
+puts "=== 读数(看 O 的次数,不要看报问题总数)==="
+puts "误报(完整版被挑刺,可代码是对的):#{good_fp}/#{n} —— 越低越好,高=凭空捏造 bug"
+puts "真召回(缺平局版被指出「没判平局」):#{gap_hit}/#{n} —— 越高越好,低=抓不住真缺口"
+puts
+puts "教训:报问题 ≠ 报对问题。数命中目标的 O,别被报问题的总数骗了。"
+puts "想调 review 的 prompt?改完再跑,对着这两个数比 —— 别凭感觉。"

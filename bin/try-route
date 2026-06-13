@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+# 看路由:同一批请求,规则路由 vs LLM 路由,各自路到哪、准不准。会调 DeepSeek。
+#
+# 跑法:  ruby bin/try-route
+#
+# 这批 case 自带【期望路由】—— 它其实就是个路由器的 mini eval 集。
+# 后两条故意换了说法(不出现"做个app"/"正则"),专门考"规则脆、LLM 灵活"。
+require_relative "../config"
+require_relative "../lib/router"
+
+CASES = [
+  ["做一个番茄钟,能设时间结束响铃",        :html_app],
+  ["写个正则匹配邮箱",                        :regex],
+  ["光合作用的反应方程式是什么?",            :question],
+  ["帮我整一个能在浏览器里玩的猜数字",        :html_app],   # 没说"做个app",规则易漏成 question
+  ["给我一个能识别手机号的模式",              :regex]        # 没出现"正则"二字,规则易误判
+]
+
+rule_hit = 0
+llm_hit = 0
+CASES.each do |text, want|
+  r = Router.by_rules(text)
+  l = Router.by_llm(text)
+  rule_hit += 1 if r == want
+  llm_hit  += 1 if l == want
+  puts "请求:#{text}"
+  puts "  期望:#{want}"
+  puts "  规则:#{r}#{r == want ? ' ✅' : ' ❌'}      LLM:#{l}#{l == want ? ' ✅' : ' ❌'}"
+  puts
+end
+
+n = CASES.size
+puts "准确率 —— 规则路由:#{rule_hit}/#{n} · LLM 路由:#{llm_hit}/#{n}"
+puts
+puts "—— 规则便宜但脆(换个说法就漏/误判);LLM 灵活但要一次调用、也会判错。"
+puts "   路由器是个分类器 → 能像这样被 eval。它选错,任务就静默走错管线、质量悄悄掉。"

@@ -1,0 +1,62 @@
+#!/usr/bin/env ruby
+# 系统级 eval:评【整条管线】的产物质量,不是评单个组件。
+#
+# ⚠️ 这是【最贵】的脚本:每个 fixture 都把整个 townhall 跑一遍(fan-out + 自改 + 评委 + 分步搭建)。
+#    所以回归集要【小而固定】。真实里这种跑在 CI / 夜间,不是每次改都跑。
+#
+# 跑法:  ruby bin/eval-system
+#
+# 用法精髓:改了 prompt / 换了模型 / 加了一步之后,【再跑一次,对比两组数】——
+# 整条线是变好还是变坏,数字说了算。这就是它和组件 eval(eval-critic)的区别:
+# 那个评一个零件,这个评整台机器的出活。
+require_relative "../config"
+require_relative "../lib/coordinator"
+require_relative "../lib/sandbox"
+require_relative "../lib/structured"
+
+# 回归集:几个有代表性的需求。小而固定 —— 同一组题反复考整条线,才比得出好坏。
+EVAL_SET = [
+  "做一个倒计时器,输入秒数,点开始后逐秒减到零,归零响铃",
+  "做一个井字棋,两人轮流下,分出胜负有提示"
+]
+
+# 质量打分(软档):复用刚做的结构化输出,让评分模型直接吐 {score, reason}。
+def score_quality(brief, html)
+  data = Structured.ask(<<~MSG, require_keys: [:score], model: JUDGE_MODEL)
+    需求:#{brief}
+
+    实现(单文件 HTML):
+    #{html}
+
+    给这个实现打分:它满足需求的程度。
+    0=完全没做到,1=能跑但缺核心功能,2=核心功能在但有明显缺陷,3=完整可用。
+    返回 JSON,形如 {"score": 0到3的整数, "reason": "一句话理由"}
+  MSG
+  { score: data["score"].to_i, reason: data["reason"] || data["_error"] }
+end
+
+results = EVAL_SET.map do |brief|
+  puts "\n===== 跑整条管线:#{brief} ====="
+  row = { brief: brief }
+  begin
+    path = Coordinator.new.run(brief)         # 跑【整个】 townhall
+    html = File.read(path)
+    row[:runs]   = Sandbox.check(html).empty? # 客观档:真跑起来没崩、没空白
+    q = score_quality(brief, html)            # 软档:满足需求的程度
+    row[:score]  = q[:score]
+    row[:reason] = q[:reason]
+  rescue => e
+    row.merge!(runs: false, score: 0, reason: "管线异常:#{e.message}")
+  end
+  row
+end
+
+puts "\n\n========== 系统级 eval 汇总 =========="
+results.each do |r|
+  puts "• #{r[:brief][0, 26]}…"
+  puts "    能跑(客观):#{r[:runs] ? '✅' : '❌'}    质量:#{r[:score]}/3    — #{r[:reason]}"
+end
+runnable = results.count { |r| r[:runs] }
+avg = results.sum { |r| r[:score] }.to_f / results.size
+puts "\n整体:能跑 #{runnable}/#{results.size} · 平均质量 #{avg.round(2)}/3"
+puts "\n—— 记下这两个数。改完 prompt/模型/加步骤,再跑一次对比:整条线变好还是变坏,数字说了算。"

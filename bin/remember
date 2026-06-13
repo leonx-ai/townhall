@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# 手动给 townhall 记一条经验(不调模型、不要 API key)。
+#
+# 跑法:  bin/remember "井字棋,棋类" "下满且无人连线时要提示平局并停止落子"
+#         第一个参数:适用场景关键词(逗号分隔);第二个:一句话经验。
+require_relative "../lib/memory"
+
+scope  = (ARGV[0] || "").split(/[,，\s]+/).reject(&:empty?)
+lesson = ARGV[1].to_s.strip
+
+if scope.empty? || lesson.empty?
+  puts %(用法: bin/remember "井字棋,棋类" "下满且无人连线时要提示平局")
+  exit 1
+end
+
+Memory.remember(scope: scope, lesson: lesson)
+puts "记下了(适用:#{scope.join(' / ')})"
+puts "  #{lesson}"
+puts "现在共 #{Memory.load.size} 条记忆 → #{Memory::STORE}"

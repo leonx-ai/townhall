@@ -1,0 +1,34 @@
+#!/usr/bin/env ruby
+# 对比"手撕字符串"和"结构化输出"。会调 DeepSeek。
+#
+# 跑法:  ruby bin/try-structured
+#
+# A) townhall 现在的做法:正则从一段话里抠数字 —— 脆,模型换个说法就错。
+# B) 结构化输出(JSON 模式 + 校验):直接拿到对象,字段缺了立刻知道,不静默错。
+require_relative "../config"
+require_relative "../lib/structured"
+
+puts "===== A) 手撕字符串(judge.rb 现在就这么干:answer[/\\d+/])====="
+plain = RubyLLM.chat(model: WORKER_MODEL, provider: :deepseek, assume_model_exists: true)
+# 故意问得让它容易先蹦出别的数字:
+ans = plain.ask("在 3 个版本里,哪个最好?简单说说理由。版本 2 功能最全。").content.to_s
+puts "模型原文:#{ans.gsub("\n", " ")[0, 90]}……"
+idx = ans[/\d+/]&.to_i
+puts "正则抠到的第一个数字 = #{idx.inspect}"
+puts "  → 它原文里先出现 '3 个版本',抠到的很可能是 3,而不是赢家 2 —— 这就是脆在哪。" if idx == 3
+
+puts "\n===== B) 结构化输出(JSON 模式 + 必填校验)====="
+data = Structured.ask(
+  "在 3 个版本(编号 0/1/2)里选最好的。版本 2 功能最全。形如 {\"winner\": 数字, \"reason\": \"一句话\"}",
+  require_keys: [:winner, :reason]
+)
+if data["_error"]
+  puts "解析/校验出问题:#{data['_error']}(但你【立刻知道】,不会拿到错数据还以为对)"
+else
+  puts "拿到对象:#{data.inspect}"
+  puts "  → winner = #{data['winner']}(直接当数字用,不碰正则)"
+  puts "  → reason = #{data['reason']}"
+end
+
+puts "\n—— A 靠'希望文字能解析',B 是'要么给你合法结构、要么明确报错'。"
+puts "   townhall 里 judge / critic / gatekeeper 的手撕解析,都能换成 B 这种。"

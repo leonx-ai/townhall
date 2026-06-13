@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+require_relative "../config"
+require_relative "../lib/coordinator"
+
+brief = ARGV.join(" ").strip
+if brief.empty?
+  puts %(用法: bin/townhall "帮我做一个班级抽奖器")
+  exit 1
+end
+
+path = Coordinator.new.run(brief)
+puts
+puts %(打开看看:  open "#{path}")

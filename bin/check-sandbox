@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+# 独立验证 Sandbox 真的会抓 bug。不调 DeepSeek、不要 API key ——
+# 只把几段【已知好 / 已知坏】的 HTML 喂给 Sandbox.check,看结果对不对。
+#
+# 跑法:  ruby bin/check-sandbox
+#
+# 这是"自检的自检":一个从没见它报过错的检查器是不可信的,
+# 所以我们用确定性的样本逼它表现,确认它既不漏报、也不误报。
+require "bundler/setup"
+require_relative "../lib/sandbox"
+
+CASES = [
+  {
+    name: "正常页面(应当:0 错)",
+    expect_errors: false,
+    html: <<~HTML
+      <!DOCTYPE html><html><body>
+        <h1>抽奖器</h1>
+        <button onclick="go()">开始</button>
+        <script>function go(){ document.body.innerHTML += "<p>中奖!</p>"; }</script>
+      </body></html>
+    HTML
+  },
+  {
+    name: "JS 一加载就抛异常(应当:抓到运行时报错)",
+    expect_errors: true,
+    html: <<~HTML
+      <!DOCTYPE html><html><body>
+        <h1>抽奖器</h1>
+        <script>thisFunctionDoesNotExist();</script>
+      </body></html>
+    HTML
+  },
+  {
+    name: "页面渲染成空白(应当:抓到 body 为空)",
+    expect_errors: true,
+    html: %(<!DOCTYPE html><html><body></body></html>)
+  }
+]
+
+all_ok = true
+CASES.each do |c|
+  errors = Sandbox.check(c[:html])
+  got    = !errors.empty?
+  ok     = (got == c[:expect_errors])
+  all_ok &&= ok
+
+  puts "#{ok ? "✅" : "❌"} #{c[:name]}"
+  errors.each { |e| puts "     · #{e}" }
+  puts "     (期望#{c[:expect_errors] ? "有错" : "无错"},实际#{got ? "有错" : "无错"})" unless ok
+end
+
+puts
+puts all_ok ? "全部符合预期 —— 沙箱可信。" : "有不符合预期的 —— 沙箱有问题,别急着信它。"
+exit(all_ok ? 0 : 1)

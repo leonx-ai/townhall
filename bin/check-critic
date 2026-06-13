@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# 验证 Critic 真的在干活(会调 DeepSeek,烧一点点 token)。
+#
+# 跑法:  ruby bin/check-critic
+#
+# 验两件最容易出问题的事:
+#   1. review 不是"睡着的" —— 喂一个明显没做到需求的实现,它得挑出问题。
+#   2. better? 能选出真正更好的那个 —— 顺带验证位置偏好处理(问两遍对调顺序)。
+# 软指标天然有噪声,所以这里只做"方向性"断言,不死磕"好的就必须 0 问题"。
+require_relative "../config"
+require_relative "../lib/critic"
+
+BRIEF = "做一个倒计时器,输入秒数,点开始后逐秒减到零"
+
+# 坏版:有个"开始"按钮,但没有任何倒计时逻辑(点了不会动)。
+BAD = <<~HTML
+  <!DOCTYPE html><html><body>
+    <input id="s" value="10"><button>开始</button>
+    <div id="t">10</div>
+  </body></html>
+HTML
+
+# 好版:真的会逐秒递减到零。
+GOOD = <<~HTML
+  <!DOCTYPE html><html><body>
+    <input id="s" value="10"><button onclick="go()">开始</button>
+    <div id="t">10</div>
+    <script>
+      function go(){
+        let n = parseInt(document.getElementById('s').value, 10);
+        const t = document.getElementById('t');
+        const id = setInterval(() => {
+          n--; t.textContent = n;
+          if (n <= 0) clearInterval(id);
+        }, 1000);
+      }
+    </script>
+  </body></html>
+HTML
+
+ok = true
+
+problems = Critic.review(BRIEF, BAD)
+r1 = !problems.empty?
+ok &&= r1
+puts "#{r1 ? "✅" : "❌"} review 抓到了坏版的功能缺失(#{problems.size} 个问题)"
+problems.each { |p| puts "     · #{p}" }
+
+prefers_good = Critic.better?(BRIEF, GOOD, BAD)
+ok &&= prefers_good
+puts "#{prefers_good ? "✅" : "❌"} better? 判定 好版 优于 坏版(两个顺序都一致)"
+
+# 反向:坏版不应该被判得比好版好。
+not_worse = !Critic.better?(BRIEF, BAD, GOOD)
+ok &&= not_worse
+puts "#{not_worse ? "✅" : "❌"} better? 没把 坏版 判成更好(对称性)"
+
+puts
+puts ok ? "Critic 可信 —— 既不装睡,也能选对。" : "Critic 有问题,别急着信它。"
+exit(ok ? 0 : 1)

@@ -1,0 +1,12 @@
+{
+  "name": "townhall",
+  "image": "mcr.microsoft.com/devcontainers/ruby:1-3.3",
+  // 装 chromium 给真沙箱(ferrum)用;配平 lock 平台;装依赖。
+  // chromium 装不上也没关系——Sandbox 起不来会自动跳过,不影响其余 bin/try-* 脚本。
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y chromium >/dev/null 2>&1; bundle lock --add-platform x86_64-linux >/dev/null 2>&1; bundle install",
+  // 在 GitHub Codespaces 里设一个名为 DEEPSEEK_API_KEY 的 secret,会自动映射进来。
+  // (config.rb 用 ENV.fetch 读它;没有 .env 也能跑。)
+  "remoteEnv": {
+    "DEEPSEEK_API_KEY": "${localEnv:DEEPSEEK_API_KEY}"
+  }
+}
