@@ -15,7 +15,7 @@ bin/townhall "帮我做一个班级抽奖器,能输入名单,点开始随机抽,
 # 跑完会打印一个 file:// 链接,open 一下就能看
 ```
 
-## 自己跑(开发者:别信声称,自己验)
+## 自己跑(Don't trust, verify)
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/leonx-ai/townhall)
 
@@ -134,7 +134,7 @@ bin/townhall "帮我做一个班级抽奖器,能输入名单,点开始随机抽,
 自检 loop 靠 `MAX_REPAIRS`、Critic/路由器靠 eval 量化、递归靠 depth/budget、记忆靠写入闸、安全靠输出校验。
 模型的自我判断信不过,这不是 bug,是工程现实。一句话:**把"对/安全/该停"从【靠模型自觉】变成【被系统强制】。**
 
-另一条副线:**别信声称,信探针** —— 文档/库的能力表说支持严格 schema,真打 API 才发现被拒;一次结果(eval、路由)说明不了什么,要量分布、要 A/B。
+另一条副线:**Don't trust, verify** —— 文档/库的能力表说支持严格 schema,真打 API 才发现被拒;一次结果(eval、路由)说明不了什么,要量分布、要 A/B。
 
 ## 还没做(下一轮)
 
