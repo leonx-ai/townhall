@@ -6,6 +6,8 @@
 
 不是为了做产品,是为了**亲手写出一个 orchestrator 的内核**,把"协调 / 并行 / 收敛"这几块从"听说过"变成"摸过"。
 
+📖 **这趟怎么做的、踩了哪些坑、每个结论怎么验 → 完整 devlog:<https://leonx.ai/posts/townhall.html>**
+
 ## 跑起来
 
 ```bash
